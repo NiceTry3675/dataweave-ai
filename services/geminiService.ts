@@ -1,7 +1,7 @@
 
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { ProcessingFile, TargetSchema } from "../types";
-import { groupFilesByStructure } from "./groupingService";
+import { buildSchemaContext } from "./schemaContextService";
 
 const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
 
@@ -57,20 +57,7 @@ export const generateSchema = async (
 ): Promise<TargetSchema> => {
     const ai = getAI();
 
-    // 1. Group files
-    const groups = groupFilesByStructure(files);
-
-    // 2. Sample Representatives
-    const samples: string[] = [];
-    groups.forEach((group, idx) => {
-        const groupFiles = files.filter(f => group.fileIds.includes(f.id));
-        const groupSamples = groupFiles.slice(0, 3).map(f => {
-            return `Group ${idx + 1} (Signature: ${group.signature.substring(0, 6)}...)\nFile: ${f.filename} / Sheet: ${f.sheetName}\n${dataToMarkdown(f.preview)}`;
-        });
-        samples.push(...groupSamples);
-    });
-
-    const contextStr = samples.slice(0, 12).join("\n\n---\n\n");
+    const { contextStr, diffSummary } = buildSchemaContext(files);
 
     const prompt = `
     You are a Senior Data Architect. Analyze these Excel file samples. 
@@ -78,7 +65,7 @@ export const generateSchema = async (
     Task: Create a SINGLE Unified Target Schema that works as a superset for all these groups.
     
     Input Samples:
-    ${contextStr}
+    ${diffSummary ? diffSummary + "\n\n" : ""}${contextStr}
     
     Instructions:
     1. **Analyze**: First, explain your reasoning. Identify the common entity (e.g., Sales, Inventory). Note specific differences between Groups (e.g., "Group 1 has 'Date', Group 2 has 'Timestamp'").
@@ -331,3 +318,71 @@ export const generateAnalysisCode = async (
         throw e;
     }
 }
+
+export const generateChartExplanation = async (
+    schema: TargetSchema,
+    selectedColumns: string[],
+    userQuery: string,
+    chartType: string,
+    plotImageBase64: string,
+    modelName: string = "gemini-3-pro-preview",
+    onStreamUpdate?: (text: string) => void
+): Promise<string> => {
+    const ai = getAI();
+
+    const columnsInfo = schema.columns
+        .filter(c => selectedColumns.includes(c.name))
+        .map(c => `- ${c.name} (${c.type})`)
+        .join("\n");
+
+    const prompt = `
+You are a Senior Data Scientist. You will be given a chart image generated from a pandas DataFrame \`df\`.
+
+AVAILABLE COLUMNS:
+${columnsInfo}
+
+USER REQUEST:
+"${userQuery}"
+
+VISUALIZATION PREFERENCE:
+${chartType}
+
+TASK:
+1. Look at the chart carefully and describe what it shows.
+2. Highlight key trends, comparisons, outliers, or patterns that are visible.
+3. Tie the interpretation back to the user request.
+
+OUTPUT:
+Return a concise Markdown explanation (no code). Use short sections or bullets if helpful.
+`;
+
+    let fullText = "";
+
+    try {
+        const contents: any = [
+            { type: 'text', text: prompt },
+            { type: 'image', data: plotImageBase64, mime_type: 'image/png' }
+        ];
+
+        const response: any = await ai.models.generateContentStream({
+            model: modelName,
+            contents
+        });
+
+        const stream = response.stream || response;
+
+        for await (const chunk of stream) {
+            const c = chunk as GenerateContentResponse;
+            const text = c.text;
+            if (text) {
+                fullText += text;
+                if (onStreamUpdate) onStreamUpdate(fullText);
+            }
+        }
+
+        return fullText.trim();
+    } catch (e) {
+        console.error("Chart Explanation Error", e);
+        throw e;
+    }
+};

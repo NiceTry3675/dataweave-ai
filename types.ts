@@ -35,6 +35,7 @@ export interface AnalysisResult {
     plotImage?: string; // Base64 png
     stats?: any; // JSON object of df.describe()
     code: string; // The code executed
+    chartExplanation?: string; // Markdown explanation of generated chart
 }
 
 export interface PyodideInterface {

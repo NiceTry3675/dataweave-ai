@@ -5,7 +5,7 @@ import { jsPDF } from 'jspdf';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { TargetSchema, AnalysisResult } from '../types';
-import { generateAnalysisCode } from '../services/geminiService';
+import { generateAnalysisCode, generateChartExplanation } from '../services/geminiService';
 import { runAnalysis } from '../services/pythonService';
 import { buildAnalysisDataContext } from '../services/analysisContextService';
 import { Button } from './ui/Button';
@@ -37,8 +37,11 @@ export const AnalysisStage: React.FC<Props> = ({ mergedData, schema, onBack, mod
     const [sampleRandomRows, setSampleRandomRows] = useState(20);
     const [sampleTopCategories, setSampleTopCategories] = useState(4);
     const [enableTimeBoost, setEnableTimeBoost] = useState(true);
+    const [autoExplainChart, setAutoExplainChart] = useState(true);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [isExportingPdf, setIsExportingPdf] = useState(false);
+    const [isExplainingChart, setIsExplainingChart] = useState(false);
+    const [chartExplanationStreaming, setChartExplanationStreaming] = useState("");
     const [result, setResult] = useState<AnalysisResult | null>(null);
     const [activeTab, setActiveTab] = useState<'preview' | 'report' | 'data' | 'code'>('preview');
     const [streamingText, setStreamingText] = useState("");
@@ -56,13 +59,15 @@ export const AnalysisStage: React.FC<Props> = ({ mergedData, schema, onBack, mod
         setIsAnalyzing(true);
         setResult(null);
         setStreamingText("");
+        setChartExplanationStreaming("");
         setActiveTab('report');
 
         try {
+            const selectedColsArr = Array.from(selectedColumns);
             const dataContext = buildAnalysisDataContext(
                 mergedData,
                 schema,
-                Array.from(selectedColumns),
+                selectedColsArr,
                 {
                     maxRows: sampleMaxRows,
                     randomRows: Math.min(sampleRandomRows, sampleMaxRows),
@@ -87,12 +92,34 @@ export const AnalysisStage: React.FC<Props> = ({ mergedData, schema, onBack, mod
             // 2. Execute Code in Pyodide
             if (code) {
                 const executionResult = await runAnalysis(code, mergedData);
-                setResult({
+                const baseResult: AnalysisResult = {
                     report: report,
                     code: code,
                     plotImage: executionResult.plotImage || undefined,
                     stats: executionResult.stats
-                });
+                };
+                setResult(baseResult);
+
+                if (autoExplainChart && executionResult.plotImage) {
+                    setIsExplainingChart(true);
+                    try {
+                        const explanation = await generateChartExplanation(
+                            schema,
+                            selectedColsArr,
+                            query,
+                            chartType,
+                            executionResult.plotImage,
+                            modelName,
+                            (text) => setChartExplanationStreaming(text)
+                        );
+                        setResult(prev => prev ? { ...prev, chartExplanation: explanation } : prev);
+                    } catch (e: any) {
+                        console.error(e);
+                    } finally {
+                        setIsExplainingChart(false);
+                        setChartExplanationStreaming("");
+                    }
+                }
             } else {
                 setResult({
                     report: report, // Report might say "I couldn't generate code"
@@ -113,7 +140,10 @@ export const AnalysisStage: React.FC<Props> = ({ mergedData, schema, onBack, mod
 
     const downloadReport = () => {
         if (!result?.report) return;
-        const blob = new Blob([result.report], { type: 'text/markdown;charset=utf-8;' });
+        const fullReport = result.chartExplanation
+            ? `${result.report}\n\n---\n\n## Chart Commentary\n\n${result.chartExplanation}\n`
+            : result.report;
+        const blob = new Blob([fullReport], { type: 'text/markdown;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         const dateStr = new Date().toISOString().slice(0, 10);
@@ -306,6 +336,16 @@ export const AnalysisStage: React.FC<Props> = ({ mergedData, schema, onBack, mod
                                 />
                                 Time‑based Panel Boost (date × category)
                             </label>
+
+                            <label className="flex items-center text-xs text-gray-700">
+                                <input
+                                    type="checkbox"
+                                    checked={autoExplainChart}
+                                    onChange={(e) => setAutoExplainChart(e.target.checked)}
+                                    className="mr-2 rounded text-brand-600 focus:ring-brand-500 border-gray-300"
+                                />
+                                Auto‑explain chart with LLM
+                            </label>
                         </div>
                     )}
 
@@ -460,6 +500,14 @@ export const AnalysisStage: React.FC<Props> = ({ mergedData, schema, onBack, mod
                                         {result.report}
                                     </ReactMarkdown>
                                 </div>
+
+                                {(isExplainingChart || result.chartExplanation || chartExplanationStreaming) && (
+                                    <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 prose prose-sm max-w-none text-gray-700">
+                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                            {`## Chart Commentary\n\n${result.chartExplanation || chartExplanationStreaming || "Generating chart commentary..."}`}
+                                        </ReactMarkdown>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
