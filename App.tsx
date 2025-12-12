@@ -3,9 +3,10 @@ import React, { useState } from 'react';
 import { UploadStage } from './components/UploadStage';
 import { SchemaStage } from './components/SchemaStage';
 import { TransformStage } from './components/TransformStage';
+import { AnalysisStage } from './components/AnalysisStage';
 import { AppStage, ProcessingFile, TargetSchema } from './types';
 import { exportToCSV } from './services/excelService';
-import { Layers, Sparkles, CheckCheck, Download, ChevronRight } from 'lucide-react';
+import { Layers, Sparkles, CheckCheck, Download, ChevronRight, BarChart3 } from 'lucide-react';
 
 export default function App() {
     const [stage, setStage] = useState<AppStage>(AppStage.UPLOAD);
@@ -36,6 +37,7 @@ export default function App() {
     const handleBack = () => {
         if (stage === AppStage.SCHEMA) setStage(AppStage.UPLOAD);
         if (stage === AppStage.TRANSFORM) setStage(AppStage.SCHEMA);
+        if (stage === AppStage.ANALYSIS) setStage(AppStage.EXPORT);
     };
 
     const handleExport = () => {
@@ -64,7 +66,10 @@ export default function App() {
         if (target === AppStage.TRANSFORM) return files.length > 0 && schema !== null;
         if (target === AppStage.EXPORT) {
             // Allow if we have success status or if we are already there
-            return stage === AppStage.EXPORT || (files.length > 0 && files.every(f => f.status === 'success'));
+            return stage === AppStage.EXPORT || stage === AppStage.ANALYSIS || (files.length > 0 && files.every(f => f.status === 'success'));
+        }
+        if (target === AppStage.ANALYSIS) {
+             return (files.length > 0 && files.every(f => f.status === 'success'));
         }
         return false;
     };
@@ -79,8 +84,7 @@ export default function App() {
     const renderStep = (stepStage: AppStage, number: number, label: string) => {
         const isActive = stage === stepStage;
         const isAccessible = canNavigateTo(stepStage);
-        const isPast = stage !== stepStage && isAccessible; // Simplified "past" logic as accessible usually implies past or current readiness
-
+        
         return (
             <div 
                 onClick={() => navigateTo(stepStage)}
@@ -98,6 +102,8 @@ export default function App() {
             </div>
         );
     };
+
+    const getMergedData = () => files.flatMap(f => f.output || []);
 
     return (
         <div className="min-h-screen bg-slate-50 text-gray-900 font-sans">
@@ -122,6 +128,8 @@ export default function App() {
                         {renderStep(AppStage.TRANSFORM, 3, 'Clean')}
                         <ChevronRight className="w-4 h-4 text-gray-300" />
                         {renderStep(AppStage.EXPORT, 4, 'Export')}
+                        <ChevronRight className="w-4 h-4 text-gray-300" />
+                        {renderStep(AppStage.ANALYSIS, 5, 'Analyze')}
                     </div>
                 </div>
             </header>
@@ -194,14 +202,32 @@ export default function App() {
                                 <Download className="w-6 h-6 mr-2" />
                                 Download CSV
                             </button>
+                            <button 
+                                onClick={() => setStage(AppStage.ANALYSIS)}
+                                className="flex items-center px-8 py-4 bg-purple-600 text-white rounded-xl shadow-lg hover:bg-purple-700 hover:shadow-xl transition-all font-semibold text-lg"
+                            >
+                                <BarChart3 className="w-6 h-6 mr-2" />
+                                Analyze Data
+                            </button>
+                        </div>
+                        <div className="mt-6">
                              <button 
                                 onClick={restart}
-                                className="flex items-center px-8 py-4 bg-white text-gray-700 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all font-semibold text-lg"
+                                className="text-gray-500 hover:text-gray-800 text-sm font-medium underline"
                             >
                                 Start New Project
                             </button>
                         </div>
                     </div>
+                )}
+
+                {stage === AppStage.ANALYSIS && schema && (
+                    <AnalysisStage 
+                        mergedData={getMergedData()}
+                        schema={schema}
+                        onBack={handleBack}
+                        modelName={codeModel}
+                    />
                 )}
             </main>
         </div>

@@ -1,3 +1,4 @@
+
 import { PyodideInterface } from '../types';
 
 let pyodideInstance: PyodideInterface | null = null;
@@ -38,8 +39,14 @@ export const initPyodide = async (): Promise<PyodideInterface> => {
             indexURL: "https://cdn.jsdelivr.net/pyodide/v0.25.0/full/"
         });
         
-        console.log("Loading Pandas...");
-        await pyodide.loadPackage(["pandas"]);
+        console.log("Loading Core Packages...");
+        // Load core scientific stack and micropip
+        // Note: We use micropip to install seaborn to ensure robust loading
+        await pyodide.loadPackage(["pandas", "matplotlib", "micropip"]);
+        
+        console.log("Installing Seaborn...");
+        const micropip = pyodide.pyimport("micropip");
+        await micropip.install("seaborn");
         
         // Define a helper to convert JS array to DF
         // We inject a small preamble to make the environment ready
@@ -49,6 +56,13 @@ export const initPyodide = async (): Promise<PyodideInterface> => {
             import io
             import json
             import re
+            import matplotlib
+            matplotlib.use("Agg") # Use non-interactive backend
+            import matplotlib.pyplot as plt
+            import seaborn as sns
+            
+            # Set default style
+            sns.set_theme(style="whitegrid")
             
             def js_to_df(js_data):
                 # Convert list of lists to dataframe
@@ -155,3 +169,71 @@ except Exception as e:
         pythonRuntimeMutex.release();
     }
 };
+
+export const runAnalysis = async (
+    code: string,
+    mergedData: any[]
+): Promise<{ plotImage: string | null; stats: any }> => {
+    if (!pyodideInstance) throw new Error("Python runtime not initialized");
+
+    await pythonRuntimeMutex.acquire();
+    
+    try {
+        pyodideInstance.globals.set("merged_data_js", mergedData);
+        
+        // Script wrapper to capture plot and stats
+        const wrapperScript = `
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import io
+import base64
+import json
+
+# Reset plot
+plt.clf()
+plt.close('all')
+
+# Load data
+df = pd.DataFrame(merged_data_js.to_py())
+
+# --- User Code Start ---
+${code}
+# --- User Code End ---
+
+# Capture Plot
+plot_b64 = None
+if plt.get_fignums():
+    # We grab the current figure (or the last one created)
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', bbox_inches='tight', dpi=120)
+    buf.seek(0)
+    plot_b64 = base64.b64encode(buf.read()).decode('utf-8')
+    plt.close('all')
+
+# Capture Stats
+# We assume the user might have created 'df' or filtered it. 
+# We run describe on the current 'df' variable.
+stats_json = df.describe(include='all').to_json(date_format='iso')
+`;
+        await pyodideInstance.runPythonAsync(wrapperScript);
+        
+        const plotImage = pyodideInstance.globals.get("plot_b64");
+        const statsJson = pyodideInstance.globals.get("stats_json");
+        
+        // Cleanup
+        pyodideInstance.runPython("del merged_data_js; del plot_b64; del stats_json");
+        
+        return {
+            plotImage: plotImage || null,
+            stats: statsJson ? JSON.parse(statsJson) : null
+        };
+
+    } catch (e) {
+        console.error("Analysis Execution Error", e);
+        throw e;
+    } finally {
+        pythonRuntimeMutex.release();
+    }
+}

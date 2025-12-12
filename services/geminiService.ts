@@ -167,7 +167,7 @@ export const generateTransformationCode = async (
     let fullText = "";
 
     try {
-        // NOTE: 직접 호출 - retryWithBackoff 래퍼 사용 시 hang 발생 이슈로 인해 직접 호출
+        // NOTE: Directly call without retry wrapper for streaming heavy ops if needed, but retries are safer generally
         const response: any = await ai.models.generateContentStream({
             model: modelName,
             contents: prompt,
@@ -208,3 +208,115 @@ export const generateTransformationCode = async (
         throw e;
     };
 };
+
+export const generateAnalysisCode = async (
+    schema: TargetSchema,
+    selectedColumns: string[],
+    userQuery: string,
+    chartType: string,
+    modelName: string = "gemini-3-pro-preview",
+    onStreamUpdate?: (text: string) => void
+): Promise<{ code: string; report: string }> => {
+    const ai = getAI();
+
+    const columnsInfo = schema.columns
+        .filter(c => selectedColumns.includes(c.name))
+        .map(c => `- ${c.name} (${c.type})`)
+        .join("\n");
+
+    const prompt = `
+    You are a Senior Data Scientist using Python.
+    
+    CONTEXT:
+    The user has a dataset loaded into a pandas DataFrame variable named \`df\`.
+    
+    AVAILABLE COLUMNS (User Selection):
+    ${columnsInfo}
+    
+    USER REQUEST:
+    "${userQuery}"
+    
+    VISUALIZATION PREFERENCE:
+    ${chartType}
+    
+    INSTRUCTIONS:
+    1. **Deep Dive Analysis**:
+       - Go beyond simple plotting. Calculate specific metrics (e.g. "Year-over-Year Growth", "Correlation Coefficients", "Top 5 Performing Categories").
+       - If the user's request is broad (e.g. "Analyze sales"), create a **Composite Visualization** using \`plt.subplots()\` (e.g. 2x1 or 2x2 grid) to show different angles (e.g. Time Series + Category Breakdown).
+       - If specific chart type is "Auto-Select" or "Dashboard", prioritize a multi-chart layout.
+    
+    2. **Python Code**:
+       - Use \`matplotlib.pyplot as plt\` and \`seaborn as sns\`.
+       - **Robust Data Cleaning**: ALWAYS assume columns might be strings. Use \`pd.to_numeric(..., errors='coerce')\` for numbers and \`pd.to_datetime(..., errors='coerce')\` for dates before plotting. Drop NaNs if they break the plot.
+       - **Styling**: Use \`sns.set_theme(style="whitegrid")\` or \`style="darkgrid"\`.
+       - **Figure**: Create a **single** Figure object (even if it has subplots). 
+       - **Final Step**: Call \`plt.tight_layout()\` to prevent overlapping labels.
+       - **Constraint**: **DO NOT** use \`plt.show()\`.
+    
+    3. **Markdown Report**:
+       - Provide an "Executive Summary" of findings.
+       - Highlight meaningful patterns, outliers, or statistics.
+       - Explain *why* the chart looks the way it does.
+    
+    Example Code Structure:
+    \`\`\`python
+    # Data Prep
+    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+    df['Sales'] = pd.to_numeric(df['Sales'], errors='coerce')
+    df = df.dropna(subset=['Date', 'Sales'])
+
+    # Visualization
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+    
+    sns.lineplot(data=df, x='Date', y='Sales', ax=ax1)
+    ax1.set_title('Sales Trend')
+    
+    sns.histplot(data=df, x='Sales', kde=True, ax=ax2)
+    ax2.set_title('Sales Distribution')
+    
+    plt.tight_layout()
+    \`\`\`
+    `;
+
+    let fullText = "";
+
+    try {
+        const response: any = await ai.models.generateContentStream({
+            model: modelName,
+            contents: prompt,
+        });
+
+        const stream = response.stream || response;
+
+        for await (const chunk of stream) {
+            const c = chunk as GenerateContentResponse;
+            const text = c.text;
+            if (text) {
+                fullText += text;
+                if (onStreamUpdate) onStreamUpdate(fullText);
+            }
+        }
+
+        const codeBlockRegex = /```python\s*([\s\S]*?)\s*```/;
+        const match = fullText.match(codeBlockRegex);
+
+        let code = "";
+        let report = "";
+
+        if (match) {
+            code = match[1].trim();
+            // The report is everything outside the code block, but primarily before it.
+            report = fullText.replace(match[0], '').trim();
+        } else {
+            // If no code block, maybe it's all text or error
+            report = fullText;
+            code = ""; 
+        }
+
+        return { code, report };
+
+    } catch (e) {
+        console.error("Analysis Generation Error", e);
+        throw e;
+    }
+}

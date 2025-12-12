@@ -1,8 +1,10 @@
+
 export enum AppStage {
     UPLOAD = 'UPLOAD',
     SCHEMA = 'SCHEMA',
     TRANSFORM = 'TRANSFORM',
-    EXPORT = 'EXPORT'
+    EXPORT = 'EXPORT',
+    ANALYSIS = 'ANALYSIS'
 }
 
 export interface SchemaColumn {
@@ -28,11 +30,19 @@ export interface ProcessingFile {
     output?: any[]; // Array of objects (records)
 }
 
+export interface AnalysisResult {
+    report: string; // Markdown text
+    plotImage?: string; // Base64 png
+    stats?: any; // JSON object of df.describe()
+    code: string; // The code executed
+}
+
 export interface PyodideInterface {
     runPythonAsync: (code: string) => Promise<any>;
     globals: any;
     loadPackage: (packages: string[]) => Promise<void>;
     runPython: (code: string) => any;
+    pyimport: (pkg: string) => any;
 }
 
 declare global {
