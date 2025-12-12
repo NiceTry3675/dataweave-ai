@@ -1,0 +1,5 @@
+{
+  "name": "DataWeave AI",
+  "description": "An intelligent data unification platform that uses Gemini to write custom Python transformation scripts for disparate Excel files, normalizing them into a single schema.",
+  "requestFramePermissions": []
+}
