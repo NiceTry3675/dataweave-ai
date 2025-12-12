@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Upload, FileSpreadsheet, Check, ListFilter, ArrowRight, Settings2 } from 'lucide-react';
 import { parseExcelFile } from '../services/excelService';
 import { ProcessingFile } from '../types';
+import { Button } from './ui/Button';
 
 interface Props {
     onFilesLoaded: (selectedFiles: ProcessingFile[], allFiles: ProcessingFile[]) => void;
@@ -131,22 +132,24 @@ export const UploadStage: React.FC<Props> = ({
                             </p>
                         </div>
                         <div className="flex items-center space-x-3">
-                             <button 
+                             <Button
                                 onClick={() => {
                                     setStagedFiles([]);
                                     setView('upload');
                                 }}
-                                className="text-sm text-gray-500 hover:text-gray-700 font-medium px-3 py-2"
+                                variant="ghost"
+                                size="sm"
                             >
                                 Cancel
-                            </button>
-                            <button 
+                            </Button>
+                            <Button
                                 onClick={handleConfirm}
-                                className="flex items-center px-4 py-2 bg-brand-600 text-white rounded-lg shadow-sm hover:bg-brand-700 transition-colors font-semibold"
+                                className="px-4 py-2"
+                                size="md"
                             >
                                 Continue with {selectedIds.size} Sheets
                                 <ArrowRight className="w-4 h-4 ml-2" />
-                            </button>
+                            </Button>
                         </div>
                     </div>
 

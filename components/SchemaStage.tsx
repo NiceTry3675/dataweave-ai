@@ -3,6 +3,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { TargetSchema, ProcessingFile } from '../types';
 import { generateSchema } from '../services/geminiService';
 import { Sparkles, Table, Save, ArrowLeft, AlertCircle, Cpu, Terminal, RefreshCw } from 'lucide-react';
+import { Button } from './ui/Button';
 
 interface Props {
     files: ProcessingFile[];
@@ -175,13 +176,15 @@ export const SchemaStage: React.FC<Props> = ({ files, onSchemaConfirmed, onBack,
                             ))}
                         </select>
                     </div>
-                    <button 
+                    <Button
                         onClick={handleGenerate}
-                        className="flex items-center text-sm font-medium text-brand-600 hover:text-brand-800 transition-colors px-3 py-2 rounded-lg hover:bg-brand-50 border border-transparent hover:border-brand-100"
+                        variant="secondary"
+                        size="sm"
+                        className="border-transparent hover:border-brand-100 text-brand-700"
                     >
                         <RefreshCw className="w-4 h-4 mr-2" />
                         Regenerate
-                    </button>
+                    </Button>
                     <button 
                         onClick={onBack}
                         className="flex items-center text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors px-3 py-2 rounded-lg hover:bg-gray-100 border border-transparent"
@@ -246,13 +249,14 @@ export const SchemaStage: React.FC<Props> = ({ files, onSchemaConfirmed, onBack,
                         </table>
                     </div>
                     <div className="p-4 bg-gray-50 border-t border-gray-200">
-                         <button 
+                         <Button
                             onClick={handleConfirm}
-                            className="w-full flex items-center justify-center px-4 py-3 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-500"
+                            className="w-full"
+                            size="md"
                         >
                             <Save className="w-4 h-4 mr-2" />
                             Confirm Schema & Continue
-                        </button>
+                        </Button>
                     </div>
                 </div>
             </div>

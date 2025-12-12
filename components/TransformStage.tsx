@@ -5,6 +5,7 @@ import { generateTransformationCode } from '../services/geminiService';
 import { runTransformation, initPyodide } from '../services/pythonService';
 import { groupFilesByStructure, FileGroup } from '../services/groupingService';
 import { Play, CheckCircle, AlertCircle, Wand2, Loader2, Database, Zap, ArrowLeft, Layers, FileText, Rocket, Cpu, Settings, XCircle, BrainCircuit } from 'lucide-react';
+import { Button } from './ui/Button';
 
 interface Props {
     files: ProcessingFile[];
@@ -221,9 +222,14 @@ export const TransformStage: React.FC<Props> = ({ files, schema, onComplete, onB
                                 {MODELS.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                              </select>
                          </div>
-                        <button onClick={handleGlobalAutoProcess} disabled={isProcessing || !isPyodideReady} className="w-full flex items-center justify-center text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors py-2 rounded shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                        <Button
+                            onClick={handleGlobalAutoProcess}
+                            disabled={isProcessing || !isPyodideReady}
+                            size="sm"
+                            className="w-full bg-indigo-600 hover:bg-indigo-700 focus:ring-indigo-500 py-2 font-bold"
+                        >
                             {isProcessing ? <Loader2 className="w-3 h-3 mr-1 animate-spin"/> : <Rocket className="w-3 h-3 mr-1" />} Auto-Process Project
-                        </button>
+                        </Button>
                     </div>
                 </div>
                 <div className="flex-1 overflow-y-auto p-2 space-y-2 bg-gray-50/50">
@@ -252,9 +258,13 @@ export const TransformStage: React.FC<Props> = ({ files, schema, onComplete, onB
                     })}
                 </div>
                 <div className="p-4 border-t border-gray-200 bg-white">
-                    <button onClick={() => onComplete(fileStates)} disabled={completedCount === 0 || isProcessing} className={`w-full py-2.5 px-4 rounded-lg text-sm font-semibold transition-colors shadow-sm flex items-center justify-center ${completedCount > 0 ? 'bg-brand-600 text-white hover:bg-brand-700' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>
+                    <Button
+                        onClick={() => onComplete(fileStates)}
+                        disabled={completedCount === 0 || isProcessing}
+                        className={`w-full py-2.5 px-4 ${completedCount > 0 ? '' : 'bg-gray-100 text-gray-400 hover:bg-gray-100'}`}
+                    >
                         {allComplete ? "Proceed to Merge" : `Merge ${completedCount} Files`}
-                    </button>
+                    </Button>
                 </div>
             </div>
 

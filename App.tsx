@@ -4,6 +4,7 @@ import { UploadStage } from './components/UploadStage';
 import { SchemaStage } from './components/SchemaStage';
 import { TransformStage } from './components/TransformStage';
 import { AnalysisStage } from './components/AnalysisStage';
+import { Button } from './components/ui/Button';
 import { AppStage, ProcessingFile, TargetSchema } from './types';
 import { exportToCSV } from './services/excelService';
 import { Layers, Sparkles, CheckCheck, Download, ChevronRight, BarChart3 } from 'lucide-react';
@@ -103,33 +104,77 @@ export default function App() {
         );
     };
 
+    const steps = [
+        { stage: AppStage.UPLOAD, number: 1, label: 'Upload' },
+        { stage: AppStage.SCHEMA, number: 2, label: 'Schema' },
+        { stage: AppStage.TRANSFORM, number: 3, label: 'Clean' },
+        { stage: AppStage.EXPORT, number: 4, label: 'Export' },
+        { stage: AppStage.ANALYSIS, number: 5, label: 'Analyze' },
+    ];
+    const activeIndex = steps.findIndex(s => s.stage === stage);
+    const progressPct = activeIndex >= 0 ? (activeIndex / (steps.length - 1)) * 100 : 0;
+
     const getMergedData = () => files.flatMap(f => f.output || []);
 
     return (
         <div className="min-h-screen bg-slate-50 text-gray-900 font-sans">
             {/* Header */}
             <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-                    <div className="flex items-center space-x-3 cursor-pointer group" onClick={restart}>
-                        <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center shadow-lg shadow-brand-200 group-hover:bg-brand-700 transition-colors">
-                            <Sparkles className="text-white w-5 h-5" />
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div className="h-16 flex items-center justify-between">
+                        <div className="flex items-center space-x-3 cursor-pointer group" onClick={restart}>
+                            <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center shadow-lg shadow-brand-200 group-hover:bg-brand-700 transition-colors">
+                                <Sparkles className="text-white w-5 h-5" />
+                            </div>
+                            <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-brand-700 to-brand-500 group-hover:from-brand-800 group-hover:to-brand-600">
+                                DataWeave AI
+                            </span>
                         </div>
-                        <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-brand-700 to-brand-500 group-hover:from-brand-800 group-hover:to-brand-600">
-                            DataWeave AI
-                        </span>
+
+                        {/* Progress Stepper (Desktop) */}
+                        <div className="hidden md:flex items-center space-x-4 text-sm font-medium">
+                            {renderStep(AppStage.UPLOAD, 1, 'Upload')}
+                            <ChevronRight className="w-4 h-4 text-gray-300" />
+                            {renderStep(AppStage.SCHEMA, 2, 'Schema')}
+                            <ChevronRight className="w-4 h-4 text-gray-300" />
+                            {renderStep(AppStage.TRANSFORM, 3, 'Clean')}
+                            <ChevronRight className="w-4 h-4 text-gray-300" />
+                            {renderStep(AppStage.EXPORT, 4, 'Export')}
+                            <ChevronRight className="w-4 h-4 text-gray-300" />
+                            {renderStep(AppStage.ANALYSIS, 5, 'Analyze')}
+                        </div>
                     </div>
 
-                    {/* Progress Stepper */}
-                    <div className="hidden md:flex items-center space-x-4 text-sm font-medium">
-                        {renderStep(AppStage.UPLOAD, 1, 'Upload')}
-                        <ChevronRight className="w-4 h-4 text-gray-300" />
-                        {renderStep(AppStage.SCHEMA, 2, 'Schema')}
-                        <ChevronRight className="w-4 h-4 text-gray-300" />
-                        {renderStep(AppStage.TRANSFORM, 3, 'Clean')}
-                        <ChevronRight className="w-4 h-4 text-gray-300" />
-                        {renderStep(AppStage.EXPORT, 4, 'Export')}
-                        <ChevronRight className="w-4 h-4 text-gray-300" />
-                        {renderStep(AppStage.ANALYSIS, 5, 'Analyze')}
+                    {/* Progress Stepper (Mobile) */}
+                    <div className="md:hidden pb-3">
+                        <div className="flex items-center gap-3 overflow-x-auto text-xs font-medium">
+                            {steps.map((s, idx) => {
+                                const isActive = stage === s.stage;
+                                const isAccessible = canNavigateTo(s.stage);
+                                return (
+                                    <button
+                                        key={s.stage}
+                                        onClick={() => navigateTo(s.stage)}
+                                        disabled={!isAccessible}
+                                        className={`flex items-center whitespace-nowrap transition-colors ${
+                                            isAccessible ? 'hover:text-brand-800' : 'opacity-50 cursor-not-allowed'
+                                        } ${isActive ? 'text-brand-600 font-bold' : 'text-gray-600'}`}
+                                    >
+                                        <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center mr-1 text-[10px] transition-all ${
+                                            isActive ? 'border-brand-600 bg-brand-50' :
+                                            isAccessible ? 'border-gray-400' : 'border-gray-200'
+                                        }`}>
+                                            {s.number}
+                                        </span>
+                                        {s.label}
+                                        {idx < steps.length - 1 && <ChevronRight className="w-3 h-3 text-gray-300 ml-2" />}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-brand-600 transition-all" style={{ width: `${progressPct}%` }} />
+                        </div>
                     </div>
                 </div>
             </header>
@@ -195,20 +240,22 @@ export default function App() {
                         </div>
 
                         <div className="flex justify-center space-x-4">
-                            <button 
+                            <Button
                                 onClick={handleExport}
-                                className="flex items-center px-8 py-4 bg-brand-600 text-white rounded-xl shadow-lg hover:bg-brand-700 hover:shadow-xl transition-all font-semibold text-lg"
+                                size="lg"
+                                className="rounded-xl shadow-lg hover:shadow-xl px-8 py-4"
                             >
                                 <Download className="w-6 h-6 mr-2" />
                                 Download CSV
-                            </button>
-                            <button 
+                            </Button>
+                            <Button
                                 onClick={() => setStage(AppStage.ANALYSIS)}
-                                className="flex items-center px-8 py-4 bg-purple-600 text-white rounded-xl shadow-lg hover:bg-purple-700 hover:shadow-xl transition-all font-semibold text-lg"
+                                size="lg"
+                                className="rounded-xl shadow-lg hover:shadow-xl px-8 py-4 bg-purple-600 hover:bg-purple-700 focus:ring-purple-500"
                             >
                                 <BarChart3 className="w-6 h-6 mr-2" />
                                 Analyze Data
-                            </button>
+                            </Button>
                         </div>
                         <div className="mt-6">
                              <button 

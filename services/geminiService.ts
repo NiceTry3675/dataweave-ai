@@ -215,7 +215,8 @@ export const generateAnalysisCode = async (
     userQuery: string,
     chartType: string,
     modelName: string = "gemini-3-pro-preview",
-    onStreamUpdate?: (text: string) => void
+    onStreamUpdate?: (text: string) => void,
+    dataContext?: { sampleMarkdown?: string; summaryMarkdown?: string }
 ): Promise<{ code: string; report: string }> => {
     const ai = getAI();
 
@@ -223,6 +224,13 @@ export const generateAnalysisCode = async (
         .filter(c => selectedColumns.includes(c.name))
         .map(c => `- ${c.name} (${c.type})`)
         .join("\n");
+
+    const sampleSection = dataContext?.sampleMarkdown
+        ? `\nDATA SAMPLE (hybrid/time-based, selected columns only):\n${dataContext.sampleMarkdown}\n`
+        : '';
+    const summarySection = dataContext?.summaryMarkdown
+        ? `\nDATA SUMMARY:\n${dataContext.summaryMarkdown}\n`
+        : '';
 
     const prompt = `
     You are a Senior Data Scientist using Python.
@@ -232,6 +240,9 @@ export const generateAnalysisCode = async (
     
     AVAILABLE COLUMNS (User Selection):
     ${columnsInfo}
+
+    ${sampleSection}
+    ${summarySection}
     
     USER REQUEST:
     "${userQuery}"

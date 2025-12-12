@@ -1,8 +1,14 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { TargetSchema, AnalysisResult } from '../types';
 import { generateAnalysisCode } from '../services/geminiService';
 import { runAnalysis } from '../services/pythonService';
+import { buildAnalysisDataContext } from '../services/analysisContextService';
+import { Button } from './ui/Button';
 import { BarChart3, PieChart, LineChart, MessageSquare, Play, RefreshCw, Image as ImageIcon, FileText, Code2, Table2, ArrowLeft, Loader2, Database, LayoutDashboard } from 'lucide-react';
 
 interface Props {
@@ -26,10 +32,17 @@ export const AnalysisStage: React.FC<Props> = ({ mergedData, schema, onBack, mod
     const [selectedColumns, setSelectedColumns] = useState<Set<string>>(new Set(schema.columns.slice(0, 5).map(c => c.name)));
     const [query, setQuery] = useState("");
     const [chartType, setChartType] = useState(CHART_TYPES[0].id);
+    const [showAdvanced, setShowAdvanced] = useState(false);
+    const [sampleMaxRows, setSampleMaxRows] = useState(50);
+    const [sampleRandomRows, setSampleRandomRows] = useState(20);
+    const [sampleTopCategories, setSampleTopCategories] = useState(4);
+    const [enableTimeBoost, setEnableTimeBoost] = useState(true);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [isExportingPdf, setIsExportingPdf] = useState(false);
     const [result, setResult] = useState<AnalysisResult | null>(null);
     const [activeTab, setActiveTab] = useState<'preview' | 'report' | 'data' | 'code'>('preview');
     const [streamingText, setStreamingText] = useState("");
+    const pdfContentRef = useRef<HTMLDivElement>(null);
 
     const toggleColumn = (name: string) => {
         const newSet = new Set(selectedColumns);
@@ -46,6 +59,17 @@ export const AnalysisStage: React.FC<Props> = ({ mergedData, schema, onBack, mod
         setActiveTab('report');
 
         try {
+            const dataContext = buildAnalysisDataContext(
+                mergedData,
+                schema,
+                Array.from(selectedColumns),
+                {
+                    maxRows: sampleMaxRows,
+                    randomRows: Math.min(sampleRandomRows, sampleMaxRows),
+                    topCategories: sampleTopCategories,
+                    enableTimeBoost
+                }
+            );
             // 1. Generate Code with AI
             const { code, report } = await generateAnalysisCode(
                 schema,
@@ -53,7 +77,11 @@ export const AnalysisStage: React.FC<Props> = ({ mergedData, schema, onBack, mod
                 query,
                 chartType,
                 modelName,
-                (text) => setStreamingText(text)
+                (text) => setStreamingText(text),
+                {
+                    sampleMarkdown: dataContext.sampleMarkdown,
+                    summaryMarkdown: dataContext.summaryMarkdown
+                }
             );
 
             // 2. Execute Code in Pyodide
@@ -80,6 +108,80 @@ export const AnalysisStage: React.FC<Props> = ({ mergedData, schema, onBack, mod
         } finally {
             setIsAnalyzing(false);
             setStreamingText("");
+        }
+    };
+
+    const downloadReport = () => {
+        if (!result?.report) return;
+        const blob = new Blob([result.report], { type: 'text/markdown;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        const dateStr = new Date().toISOString().slice(0, 10);
+        link.href = url;
+        link.download = `analysis-report-${dateStr}.md`;
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
+    const downloadPlot = () => {
+        if (!result?.plotImage) return;
+        const byteString = atob(result.plotImage);
+        const bytes = new Uint8Array(byteString.length);
+        for (let i = 0; i < byteString.length; i++) {
+            bytes[i] = byteString.charCodeAt(i);
+        }
+        const blob = new Blob([bytes], { type: 'image/png' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        const dateStr = new Date().toISOString().slice(0, 10);
+        link.href = url;
+        link.download = `analysis-plot-${dateStr}.png`;
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
+    const downloadPdf = async () => {
+        if (!pdfContentRef.current || isExportingPdf) return;
+        setIsExportingPdf(true);
+        try {
+            const canvas = await html2canvas(pdfContentRef.current, {
+                scale: 2,
+                useCORS: true,
+                backgroundColor: '#ffffff',
+            });
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = pdf.internal.pageSize.getHeight();
+            const imgProps = pdf.getImageProperties(imgData);
+            const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+            let heightLeft = imgHeight;
+            let position = 0;
+
+            pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
+            heightLeft -= pdfHeight;
+
+            while (heightLeft > 0) {
+                position = heightLeft - imgHeight;
+                pdf.addPage();
+                pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
+                heightLeft -= pdfHeight;
+            }
+
+            const dateStr = new Date().toISOString().slice(0, 10);
+            pdf.save(`analysis-${dateStr}.pdf`);
+        } catch (e) {
+            console.error(e);
+            alert("Failed to generate PDF. Try reducing sample size or report length.");
+        } finally {
+            setIsExportingPdf(false);
         }
     };
 
@@ -133,14 +235,88 @@ export const AnalysisStage: React.FC<Props> = ({ mergedData, schema, onBack, mod
                         />
                     </div>
 
-                    <button 
-                        onClick={handleAnalyze} 
+                    <button
+                        type="button"
+                        onClick={() => setShowAdvanced(v => !v)}
+                        className="mt-3 text-xs font-semibold text-gray-600 hover:text-gray-900 text-left"
+                    >
+                        {showAdvanced ? "Hide Advanced Options" : "Show Advanced Options"}
+                    </button>
+
+                    {showAdvanced && (
+                        <div className="mt-2 space-y-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Context Sample Rows</label>
+                                <select
+                                    value={sampleMaxRows}
+                                    onChange={(e) => {
+                                        const v = parseInt(e.target.value, 10);
+                                        setSampleMaxRows(v);
+                                        setSampleRandomRows(r => Math.min(r, v));
+                                    }}
+                                    className="w-full text-xs border-gray-300 rounded-md focus:ring-brand-500 focus:border-brand-500"
+                                >
+                                    {[20, 40, 50, 60, 80, 100].map(n => (
+                                        <option key={n} value={n}>{n} rows</option>
+                                    ))}
+                                </select>
+                                <p className="text-[11px] text-gray-500 mt-1">How many rows are sent to the LLM.</p>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Random Rows (fill)</label>
+                                <input
+                                    type="number"
+                                    min={0}
+                                    max={sampleMaxRows}
+                                    value={sampleRandomRows}
+                                    onChange={(e) => {
+                                        const raw = e.target.value;
+                                        const v = raw === "" ? 0 : parseInt(raw, 10);
+                                        const clamped = Math.max(0, Math.min(sampleMaxRows, Number.isFinite(v) ? v : 0));
+                                        setSampleRandomRows(clamped);
+                                    }}
+                                    className="w-full text-xs border border-gray-300 rounded-md px-2 py-1 focus:ring-brand-500 focus:border-brand-500"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Top Categories per Categorical Column</label>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    max={10}
+                                    value={sampleTopCategories}
+                                    onChange={(e) => {
+                                        const raw = e.target.value;
+                                        const v = raw === "" ? 1 : parseInt(raw, 10);
+                                        const clamped = Math.max(1, Math.min(10, Number.isFinite(v) ? v : 1));
+                                        setSampleTopCategories(clamped);
+                                    }}
+                                    className="w-full text-xs border border-gray-300 rounded-md px-2 py-1 focus:ring-brand-500 focus:border-brand-500"
+                                />
+                            </div>
+
+                            <label className="flex items-center text-xs text-gray-700">
+                                <input
+                                    type="checkbox"
+                                    checked={enableTimeBoost}
+                                    onChange={(e) => setEnableTimeBoost(e.target.checked)}
+                                    className="mr-2 rounded text-brand-600 focus:ring-brand-500 border-gray-300"
+                                />
+                                Time‑based Panel Boost (date × category)
+                            </label>
+                        </div>
+                    )}
+
+                    <Button
+                        onClick={handleAnalyze}
                         disabled={isAnalyzing || selectedColumns.size === 0 || !query.trim()}
-                        className="mt-4 w-full flex items-center justify-center py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                        className="mt-4 w-full py-2.5"
                     >
                         {isAnalyzing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
                         {isAnalyzing ? "Analyzing..." : "Run Deep Dive Analysis"}
-                    </button>
+                    </Button>
                 </div>
                 
                 <button onClick={onBack} className="flex items-center justify-center text-sm text-gray-500 hover:text-gray-800 transition-colors">
@@ -240,24 +416,50 @@ export const AnalysisStage: React.FC<Props> = ({ mergedData, schema, onBack, mod
 
                     {result && activeTab === 'report' && (
                         <div className="max-w-5xl mx-auto space-y-6">
-                            {result.plotImage && (
-                                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-                                    <img 
-                                        src={`data:image/png;base64,${result.plotImage}`} 
-                                        alt="Analysis Plot" 
-                                        className="w-full h-auto rounded-lg"
-                                    />
+                            <div className="flex flex-wrap justify-end gap-2">
+                                <Button
+                                    onClick={downloadPdf}
+                                    variant="secondary"
+                                    size="sm"
+                                    disabled={isExportingPdf}
+                                >
+                                    <FileText className="w-4 h-4 mr-2" />
+                                    {isExportingPdf ? "Generating PDF..." : "Download PDF"}
+                                </Button>
+                                <Button
+                                    onClick={downloadReport}
+                                    variant="secondary"
+                                    size="sm"
+                                >
+                                    <FileText className="w-4 h-4 mr-2" />
+                                    Download Report
+                                </Button>
+                                {result.plotImage && (
+                                    <Button
+                                        onClick={downloadPlot}
+                                        variant="secondary"
+                                        size="sm"
+                                    >
+                                        <ImageIcon className="w-4 h-4 mr-2" />
+                                        Download Chart
+                                    </Button>
+                                )}
+                            </div>
+                            <div ref={pdfContentRef} className="space-y-6">
+                                {result.plotImage && (
+                                    <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                                        <img 
+                                            src={`data:image/png;base64,${result.plotImage}`} 
+                                            alt="Analysis Plot" 
+                                            className="w-full h-auto rounded-lg"
+                                        />
+                                    </div>
+                                )}
+                                <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 prose prose-sm max-w-none text-gray-700">
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                        {result.report}
+                                    </ReactMarkdown>
                                 </div>
-                            )}
-                            <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 prose prose-sm max-w-none text-gray-700">
-                                {/* Simple Markdown Rendering */}
-                                {result.report.split('\n').map((line, i) => {
-                                    if (line.startsWith('## ')) return <h2 key={i} className="text-xl font-bold text-gray-900 mt-6 mb-3">{line.replace('## ', '')}</h2>
-                                    if (line.startsWith('# ')) return <h1 key={i} className="text-2xl font-bold text-gray-900 mt-6 mb-4">{line.replace('# ', '')}</h1>
-                                    if (line.startsWith('- ')) return <li key={i} className="ml-4">{line.replace('- ', '')}</li>
-                                    if (line.trim() === '') return <br key={i}/>
-                                    return <p key={i}>{line}</p>
-                                })}
                             </div>
                         </div>
                     )}
