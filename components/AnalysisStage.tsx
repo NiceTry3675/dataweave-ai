@@ -115,6 +115,8 @@ export const AnalysisStage: React.FC<Props> = ({ mergedData, schema, onBack, mod
                         setResult(prev => prev ? { ...prev, chartExplanation: explanation } : prev);
                     } catch (e: any) {
                         console.error(e);
+                        const msg = e?.message ? `**Chart commentary error:** ${e.message}` : "**Chart commentary error:** failed to generate.";
+                        setResult(prev => prev ? { ...prev, chartExplanation: msg } : prev);
                     } finally {
                         setIsExplainingChart(false);
                         setChartExplanationStreaming("");
@@ -495,17 +497,32 @@ export const AnalysisStage: React.FC<Props> = ({ mergedData, schema, onBack, mod
                                         />
                                     </div>
                                 )}
-                                <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 prose prose-sm max-w-none text-gray-700">
-                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                        {result.report}
-                                    </ReactMarkdown>
+                                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                                    <div className="px-6 py-3 bg-gray-50 border-b border-gray-200 flex items-center">
+                                        <MessageSquare className="w-4 h-4 mr-2 text-brand-600" />
+                                        <span className="text-sm font-semibold text-gray-800">LLM Report</span>
+                                    </div>
+                                    <div className="p-8 prose prose-sm max-w-none text-gray-700">
+                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                            {result.report}
+                                        </ReactMarkdown>
+                                    </div>
                                 </div>
 
                                 {(isExplainingChart || result.chartExplanation || chartExplanationStreaming) && (
-                                    <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 prose prose-sm max-w-none text-gray-700">
-                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                            {`## Chart Commentary\n\n${result.chartExplanation || chartExplanationStreaming || "Generating chart commentary..."}`}
-                                        </ReactMarkdown>
+                                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                                        <div className="px-6 py-3 bg-purple-50/60 border-b border-purple-100 flex items-center">
+                                            <ImageIcon className="w-4 h-4 mr-2 text-purple-600" />
+                                            <span className="text-sm font-semibold text-purple-900">Chart Commentary</span>
+                                            {isExplainingChart && (
+                                                <span className="ml-2 text-xs text-purple-700 animate-pulse">generating…</span>
+                                            )}
+                                        </div>
+                                        <div className="p-8 prose prose-sm max-w-none text-gray-700 bg-purple-50/20">
+                                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                                {result.chartExplanation || chartExplanationStreaming || "Generating chart commentary..."}
+                                            </ReactMarkdown>
+                                        </div>
                                     </div>
                                 )}
                             </div>

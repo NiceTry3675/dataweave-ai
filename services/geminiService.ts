@@ -356,21 +356,24 @@ OUTPUT:
 Return a concise Markdown explanation (no code). Use short sections or bullets if helpful.
 `;
 
-    let fullText = "";
-
-    try {
+    const runOnce = async (model: string) => {
+        let fullText = "";
         const contents: any = [
-            { type: 'text', text: prompt },
-            { type: 'image', data: plotImageBase64, mime_type: 'image/png' }
+            {
+                role: 'user',
+                parts: [
+                    { text: prompt },
+                    { inlineData: { data: plotImageBase64, mimeType: 'image/png' } }
+                ]
+            }
         ];
 
-        const response: any = await ai.models.generateContentStream({
-            model: modelName,
+        const response: any = await retryWithBackoff(() => ai.models.generateContentStream({
+            model,
             contents
-        });
+        }));
 
         const stream = response.stream || response;
-
         for await (const chunk of stream) {
             const c = chunk as GenerateContentResponse;
             const text = c.text;
@@ -379,10 +382,17 @@ Return a concise Markdown explanation (no code). Use short sections or bullets i
                 if (onStreamUpdate) onStreamUpdate(fullText);
             }
         }
-
         return fullText.trim();
-    } catch (e) {
-        console.error("Chart Explanation Error", e);
+    };
+
+    try {
+        return await runOnce(modelName);
+    } catch (e: any) {
+        console.warn("Chart explanation failed with model", modelName, e);
+        if (modelName !== 'gemini-flash-latest') {
+            if (onStreamUpdate) onStreamUpdate("");
+            return await runOnce('gemini-flash-latest');
+        }
         throw e;
     }
 };
